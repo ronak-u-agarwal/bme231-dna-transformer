@@ -15,9 +15,7 @@ from torch.nn.utils.rnn import pad_sequence
 
 # 1. Find all FASTA files in your directory
 fasta_paths = glob.glob(
-    "/Users/ronakagarwal/Library/CloudStorage/OneDrive-Personal/"
-    "Desktop/S4 washu/Foundations of biomedical computing/"
-    "Final project/Data/*.fa"
+    "Data/*.fa"
 )
 
 all_records = []
@@ -109,6 +107,7 @@ for idx in sorted(idx2aa):
 
 
 #%% Create list of amino acids
+corresponding_BP = []
 exons = []
 print(len(all_records))
 for rec in all_records:
@@ -116,9 +115,11 @@ for rec in all_records:
     amino_acids = seq_to_codon_indices(sequence)
     if amino_acids[0] == 11 and amino_acids[-1] == 0:
         exons.append(amino_acids)
+        corresponding_BP.append(sequence)
 print(len(exons))
 
 #%% Padding
+vocab_size = 21   # without the padding token
 
 # 1) Turning each list into a 1D LongTensor
 tensor_seqs = [torch.tensor(seq, dtype=torch.long) for seq in exons]

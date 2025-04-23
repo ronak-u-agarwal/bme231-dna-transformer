@@ -4,14 +4,14 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import TensorDataset, DataLoader
 
-from import_data import padded
+from import_data import padded, vocab_size, pad_idx
 from transformer_more import CodonTransformer
+import matplotlib.pyplot as plt
 #%% Hyperparameters
 ## Embedding dimension, key/query dimension, number of self-attention
 ## heads in a single self-attention layer, etc.
 #
 # These are defaults, to change them, change the initialization
-vocab_size = 21   # without the padding token
 embed_dim = 16
 kq_dim = 8
 heads = 8
@@ -33,36 +33,40 @@ model = model.to(device)
 
 #%% Splitting data
 train = int(padded.shape[0] * 0.8)
-val = int(padded.shape[0] * 0.9)
+
 test = int(padded.shape[0])
+
+## I think i should shuffle padded here
 
 padded_in = padded[:, :-1]
 padded_out = padded[:, 1:]
 
 train_x = padded_in[:train]
-val_x = padded_in[train:val]
-test_x = padded_in[val:test - 1]
+test_x = padded_in[train:test - 1]
 
 train_y = padded_out[:train]
-val_y = padded_out[train:val]
-test_y = padded_out[val:test - 1]
+test_y = padded_out[train:test - 1]
 
 #%% Training loop
 
 # === 1. Prepare DataLoaders ===
 train_ds = TensorDataset(train_x, train_y)
-val_ds = TensorDataset(val_x, val_y)
+test_ds = TensorDataset(test_x, test_y)
 
 batch_size = 500
 train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-val_loader = DataLoader(val_ds, batch_size=batch_size)
+test_loader = DataLoader(test_ds, batch_size=batch_size)
 
 # === 2. Move Model and Set Up Optimizer ===
 model = model.to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=5e-5)
+optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
 
 # === 3. Training Loop ===
-epochs = 10
+epochs = 50
+
+train_list = []
+test_list = []
+
 
 for epoch in range(1, epochs + 1):
 
@@ -99,13 +103,50 @@ for epoch in range(1, epochs + 1):
     avg_train_loss = total_train_loss / len(train_loader.dataset)
 
     # --- Validation phase ---
-    model.eval()  # sets the model to evaluation mode
-    total_val_loss = 0.0
-    print(f"Epoch {epoch:2d}: Train Loss = {avg_train_loss:.4f}")
+    # model.eval()  # sets the model to evaluation mode
+    total_test_loss = 0.0
 
-## VALIDATION THING MOVED TO RECYCLING
+    with torch.no_grad():
+        for x_batch, y_batch in test_loader:
+            x_batch = x_batch.to(device)
+            y_batch = y_batch.to(device)
+
+            logits = model(x_batch)
+            logits = logits.reshape(-1, vocab_size)
+            targets = y_batch.reshape(-1)
+
+            loss = F.cross_entropy(logits, targets, ignore_index=pad_idx)
+
+            total_test_loss += loss.item() * x_batch.size(0)
+
+    # average val loss per token
+    avg_test_loss = total_test_loss / len(test_loader.dataset)
+    ## OOOH loss is lower, has fewer chucks, dividing here assumes they are all size 500, but actually not
+    # --- Epoch summary ---
+    print(f"Epoch {epoch:2d}: Train Loss = {avg_train_loss:.4f} | Test Loss = {avg_test_loss:.4f}")
+    train_list.append(avg_train_loss)
+    test_list.append(avg_test_loss)
+
+
+
+#%% Plot the training curve
+import matplotlib.pyplot as plt
+
+plt.figure()
+plt.plot(train_list, label='Train Loss', color='blue')
+plt.plot(test_list, label='Test Loss', color='red')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.legend()
+plt.title("Training and Test Loss During Training")
+plt.show()
+
+
+#%% Reallllyyyy don't wanna run the next cell unless I'm sure
+
+
 #%% Saving the model
-MODEL_PATH = "codon_transformer.pt"
+MODEL_PATH = "codon_transformer2.pt"
 torch.save(model.state_dict(), MODEL_PATH)
 
 #%% Getting the model from whatever's saved
@@ -113,7 +154,6 @@ copy_model = CodonTransformer(num_heads=heads).to(device)
 checkpoint = torch.load("codon_transformer.pt", map_location=device)
 copy_model.load_state_dict(checkpoint)
 
-#%% Test: test training overall
 
 #%% Finding good batch size
 
